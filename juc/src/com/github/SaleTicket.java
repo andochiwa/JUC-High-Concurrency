@@ -1,5 +1,8 @@
 package com.github;
 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 /**
  * 售票员卖票
  * @author HAN
@@ -23,11 +26,19 @@ public class SaleTicket {
 class Ticket{
 
     private int number = 100;
+    private Lock lock = new ReentrantLock();
 
     public void sale() {
-        if (number > 0) {
-            System.out.println(Thread.currentThread().getName() + "卖出第" + number + "张票");
-            number--;
+        try {
+            lock.lock();
+            if (number > 0) {
+                System.out.println(Thread.currentThread().getName() + "卖出第" + number + "张票");
+                number--;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
         }
     }
 }
