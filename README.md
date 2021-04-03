@@ -12,3 +12,7 @@
 6. Callable interface
 
 7. ReentrantReadWriteLock
+
+8. BlockingQueue
+
+9. ThreadPool
