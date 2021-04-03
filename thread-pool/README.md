@@ -49,20 +49,41 @@
 
 # 拒绝策略
 
-## AbortPolicy(默认)
+## AbortPolicy(中止策略)[默认]
 
 直接抛出`RejectedExecutionException`异常阻止系统正常运行
 
-## CallerRunsPolicy
+## CallerRunsPolicy(调用者运行策略)
 
 "调用者运行"的一种调节机制，该策略既不会抛弃任务，也不会抛出异常，而是将某些任务**回退到调用者(谁让你找我的，你就找谁)**，从而降低新任务的流量
 
 （直接调用runnable.run()）
 
-## DiscardPolicy
+## DiscardPolicy(丢弃策略)
 
 抛弃队列中等待最久的任务，然后将当前任务加入队列中尝试再次提交当前任务
 
-## DiscardOldestPolicy
+## DiscardOldestPolicy(弃老策略)
 
 丢弃无法处理的任务，不予任何处理也不抛出异常，如果允许任务丢失，这是最好的一种策略
+
+# 第三方拒绝策略
+
+## dubbo的拒绝策略
+
+主要会做三件事，让使用者清楚触发线程拒绝策略的原因
+1. 输出一条警告级别的日志，内容为线程池的详细设置参数，状态等
+2. 输出当前线程的堆栈详情
+3. 抛出拒绝执行异常
+
+## Netty的拒绝策略
+
+Netty的拒绝策略和CallerRunsPolicy很像，不过Netty是新建了一个线程来处理
+
+## activeMq的拒绝策略
+
+activeMq中的策略属于最大努力执行任务型，当触发拒绝策略时，在尝试一分钟的时间重新将任务塞进任务队列，当一分钟超时还没成功时，就抛出异常
+
+## pinpoint的拒绝策略
+
+定义了一个拒绝策略链，包装了一个拒绝策略列表，当触发拒绝策略时，会将策略链中的rejectedExecution依次执行一遍
