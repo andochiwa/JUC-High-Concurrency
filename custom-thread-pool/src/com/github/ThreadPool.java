@@ -38,12 +38,21 @@ public class ThreadPool {
         }
         synchronized (workers) {
             // 当任务数没有超过核心线程数时
+            // 当任务数超过核心线程数时，如果任务队列不满，就加入到任务队列
+            // 如果任务队列满了，如果没有超过最大线程，就创建额外线程
+            // 如果超过最大线程，就执行拒绝策略
             if (workers.size() < coreSize) {
                 Worker worker = new Worker(task, true);
                 workers.add(worker);
                 worker.start();
-            } else if (workQueue.size() < queue)
-            // 当任务数超过核心线程数时，加入任务队列
+            } else if (!workQueue.isFull()) {
+                workQueue.put(task);
+            } else if (workers.size() < maxSize) {
+                Worker worker = new Worker(task, false);
+                workers.add(worker);
+                worker.start();
+            }
+
         }
     }
 
@@ -51,7 +60,7 @@ public class ThreadPool {
 
         private Runnable task;
 
-        private boolean isCoreThread;
+        private final boolean isCoreThread;
 
         public Worker(Runnable task, boolean isCoreThread) {
             this.task = task;
@@ -69,6 +78,14 @@ public class ThreadPool {
                 } finally {
                     task = null;
                 }
+            }
+        }
+
+        private Runnable getTask() {
+            if (isCoreThread) {
+                return workQueue.take();
+            } else {
+                return workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS);
             }
         }
     }
