@@ -19,4 +19,4 @@
 
 10. [ForkJoinPool | Stream](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/fork-join-pool)
 
-11. [Custom ThreadPool](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/thread-pool)
+11. [Custom ThreadPool](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/custom-thread-pool)
