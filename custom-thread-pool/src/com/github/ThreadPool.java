@@ -44,12 +44,15 @@ public class ThreadPool {
             if (workers.size() < coreSize) {
                 Worker worker = new Worker(task, true);
                 workers.add(worker);
+                System.out.println(Thread.currentThread().getName() + "\t新增核心线程");
                 worker.start();
             } else if (!workQueue.isFull()) {
+                System.out.println(Thread.currentThread().getName() + "\t加入到任务队列");
                 workQueue.put(task);
             } else if (workers.size() < maxSize) {
                 Worker worker = new Worker(task, false);
                 workers.add(worker);
+                System.out.println(Thread.currentThread().getName() + "\t新增额外线程");
                 worker.start();
             }
 
@@ -70,14 +73,19 @@ public class ThreadPool {
         @Override
         public void run() {
             Runnable task = this.task;
-            while (task != null || (task = workQueue.take()) != null) {
+            while (task != null || (task = getTask()) != null) {
                 try {
+                    System.out.println(Thread.currentThread().getName() + "\t正在执行任务 " + task);
                     task.run();
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
                     task = null;
                 }
+            }
+            synchronized (this) {
+                System.out.println(Thread.currentThread().getName() + "\t删除额外线程");
+                workers.remove(this);
             }
         }
 
