@@ -27,6 +27,10 @@ public class BlockingQueue<T> {
     // 容量
     private int capacity;
 
+    public BlockingQueue(int capacity) {
+        this.capacity = capacity;
+    }
+
     // 带超时的阻塞获取
     public T poll(long timeout, TimeUnit timeUnit) {
         lock.lock();
