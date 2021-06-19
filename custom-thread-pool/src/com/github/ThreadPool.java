@@ -19,14 +19,18 @@ public class ThreadPool {
     private final int coreSize;
 
     // 最大线程数
-    private int maxSize;
+    private final int maxSize;
 
     // 超时时间
-    private long keepAliveTime;
+    private final long keepAliveTime;
 
-    public ThreadPool(int coreSize, int maxSize, long keepAliveTime, TimeUnit unit, int queueSize) {
+    // 拒绝策略
+    private final RejectPolicy rejectPolicy;
+
+    public ThreadPool(int coreSize, int maxSize, long keepAliveTime, TimeUnit unit, int queueSize, RejectPolicy rejectPolicy) {
         this.coreSize = coreSize;
         this.maxSize = maxSize;
+        this.rejectPolicy = rejectPolicy;
         this.keepAliveTime = unit.toNanos(keepAliveTime);
         this.workQueue = new BlockingQueue<>(queueSize);
     }
@@ -54,6 +58,9 @@ public class ThreadPool {
                 workers.add(worker);
                 System.out.println(Thread.currentThread() + "\t新增额外线程");
                 worker.start();
+            } else {
+                System.out.println(Thread.currentThread() + "\t执行拒绝策略");
+                rejectPolicy.reject(task, this);
             }
 
         }
@@ -61,7 +68,7 @@ public class ThreadPool {
 
     private class Worker extends Thread {
 
-        private Runnable task;
+        private final Runnable task;
 
         private final boolean isCoreThread;
 
