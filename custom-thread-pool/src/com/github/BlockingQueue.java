@@ -94,10 +94,10 @@ public class BlockingQueue<T> {
     }
 
     // 获取大小
-    public int size() {
+    public boolean isFull() {
         lock.lock();
         try {
-            return queue.size();
+            return queue.size() == capacity;
         } finally {
             lock.unlock();
         }
