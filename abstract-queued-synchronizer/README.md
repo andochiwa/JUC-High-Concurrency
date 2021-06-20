@@ -357,3 +357,31 @@ private void doAcquireShared(int arg) {
 跟独占模式比，还有一点需要注意的是，这里只有线程是 head.next 时（“老二”），才会去尝试获取资源，有剩余的话还会唤醒之后的队友。那么问题就来了，假如老大用完后释放了5个资源，而老二需要6个，老三需要1个，老四需要2个。老大先唤醒老二，老二一看资源不够，他是把资源让给老三呢，还是不让？答案是否定的！老二会继续`park()`等待其他线程释放资源，也更不会去唤醒老三和老四了。独占模式，同一时刻只有一个线程去执行，这样做未尝不可；但共享模式下，多个线程是可以同时执行的，现在因为老二的资源需求量大，而把后面量小的老三和老四也都卡住了。当然，这并不是问题，只是 AQS 保证严格按照入队顺序唤醒罢了（保证公平，但降低了并发）。
 
 #### 2.3.1.1 setHeadAndPropagate(Node, int)
+
+```java
+private void setHeadAndPropagate(Node node, int propagate) {
+    Node h = head; 
+    setHead(node);//head指向自己
+    //如果还有剩余量，继续唤醒下一个邻居线程
+    if (propagate > 0 || h == null || h.waitStatus < 0) {
+        Node s = node.next;
+        if (s == null || s.isShared())
+            doReleaseShared();
+    }
+}
+```
+
+此方法在`setHead()`的基础上多了一步，就是自己苏醒的同时，如果条件符合（比如还有剩余资源），还会去唤醒后继结点，毕竟是共享模式
+
+`doReleaseShared()`我着下一小节的`releaseShared()`里来讲。
+
+### 2.3.2 小结
+
+至此，acquireShared()也告一段落了。再梳理一下它的流程：
+
+1. `tryAcquireShared()`尝试获取资源，成功则直接返回；
+2. 失败则通过`doAcquireShared()`进入等待队列`park()`，直到被`unpark() | interrupt()`并成功获取到资源才返回。整个等待过程也是忽略中断的。
+
+其实跟`acquire()`的流程大同小异，只不过多了个**自己拿到资源后，还会去唤醒后继队友的操作（因为是共享）**。
+
+1. 
