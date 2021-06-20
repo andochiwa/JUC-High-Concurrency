@@ -118,3 +118,68 @@ private Node enq(final Node node) {
     }
 }
 ```
+
+### 2.1.3 acquireQueued(Node, int)
+
+通过tryAcquire()和addWaiter()，该线程获取资源失败，已经被放入等待队列尾部了，那么下一步就是：**进入等待状态休息，直到其他线程彻底释放资源后唤醒自己，自己再拿到资源，然后就可以去干自己想干的事了**。`acquireQueued()`就是干这件事：**在等待队列中排队等待资源（中间没其它事干可以休息），直到拿到资源后再返回**。这个函数非常关键，源码如下:
+
+```java
+final boolean acquireQueued(final Node node, int arg) {
+    boolean failed = true; // 标记是否成功拿到资源
+    try {
+        boolean interrupted = false; // 标记等待过程中是否被中断过
+
+        //自旋
+        for (;;) {
+            final Node p = node.predecessor();//拿到前驱
+            //如果前驱是head，即该结点已成老二，
+            //那么便有资格去尝试获取资源（可能是老大释放完资源唤醒自己的，当然也可能被interrupt了）。
+            if (p == head && tryAcquire(arg)) {
+                setHead(node); // 拿到资源后，将head指向该结点。所以head所指的标杆结点，就是当前获取到资源的那个结点或null。
+                p.next = null; // setHead中node.prev已置为null，此处再将head.next置为null，
+                			   // 就是为了方便GC回收以前的head结点。也就意味着之前拿完资源的结点出队了！
+                failed = false; // 成功获取资源
+                return interrupted; // 返回等待过程中是否被中断过
+            }
+
+            // 如果自己可以休息了，就通过park()进入waiting状态，直到被unpark()。
+            // 如果不可中断的情况下被中断了，那么会从park()中醒过来，发现拿不到资源，从而继续进入park()等待。
+            if (shouldParkAfterFailedAcquire(p, node) &&
+                parkAndCheckInterrupt())
+                interrupted = true;//如果等待过程中被中断过，哪怕只有那么一次，就将interrupted标记为true
+        }
+    } finally {
+        if (failed) // 如果等待过程中没有成功获取资源（如timeout，或者可中断的情况下被中断了），那么取消结点在队列中的等待。
+            cancelAcquire(node);
+    }
+}
+```
+
+到这里，先不急着总结`acquireQueued()`的函数流程，先看看`shouldParkAfterFailedAcquire()`和`parkAndCheckInterrupt()`具体干些什么。
+
+#### 2.1.3.1 shouldParkAfterFailedAcquire(Node, Node)
+
+此方法主要用于检查状态，看看自己是否真的可以去休息了（线程进入 waiting 状态），防止队列前面的线程都放弃了
+
+```java
+private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+    int ws = pred.waitStatus;//拿到前驱的状态
+    if (ws == Node.SIGNAL)
+        //如果已经告诉前驱拿完号后通知自己一下，那就可以安心休息了
+        return true;
+    if (ws > 0) {
+        /*
+           * 如果前驱放弃了，那就一直往前找，直到找到最近一个正常等待的状态，并排在它的后边。
+           * 注意：那些放弃的结点，由于被自己“加塞”到它们前边，它们相当于形成一个无引用链，稍后就会被GC回收
+          */
+        do {
+            node.prev = pred = pred.prev;
+        } while (pred.waitStatus > 0);
+        pred.next = node;
+    } else {
+        //如果前驱正常，那就把前驱的状态设置成SIGNAL，告诉它拿完号后通知自己一下。有可能失败，人家说不定刚刚释放完呢！
+        compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+    }
+    return false;
+}
+```
