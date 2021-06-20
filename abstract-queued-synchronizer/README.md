@@ -384,4 +384,47 @@ private void setHeadAndPropagate(Node node, int propagate) {
 
 其实跟`acquire()`的流程大同小异，只不过多了个**自己拿到资源后，还会去唤醒后继队友的操作（因为是共享）**。
 
-1. 
+## 2.4 releaseShared()
+
+上一小节已经把`acquireShared()`说完了，这一小节就来讲讲它的反操作`releaseShared()`。此方法是共享模式下线程释放共享资源的顶层入口。它会释放指定量的资源，如果成功释放且允许唤醒等待线程，它会唤醒等待队列里的其他线程来获取资源。下面是`releaseShared()`的源码：
+
+```java
+public final boolean releaseShared(int arg) {
+    if (tryReleaseShared(arg)) {//尝试释放资源
+        doReleaseShared();//唤醒后继结点
+        return true;
+    }
+    return false;
+}
+```
+
+此方法的流程也比较简单，一句话：**释放掉资源后，唤醒后继**。跟独占模式下的`release()`相似，但有一点稍微需要注意：独占模式下的`tryRelease()`在完全释放掉资源（state = 0）后，才会返回 true 去唤醒其他线程，这主要是基于独占下可重入的考量；而共享模式下的`releaseShared()`则没有这种要求，共享模式实质就是控制一定量的线程并发执行，那么拥有资源的线程在释放掉部分资源时就可以唤醒后继等待结点。例如，资源总量是 13，A（5）和 B（7）分别获取到资源并发运行，C（4）来时只剩1个资源就需要等待。A 在运行过程中释放掉 2 个资源量，然后`tryReleaseShared(2)`返回 true 唤醒 C，C 一看只有3个仍不够继续等待；随后 B 又释放 2 个，`tryReleaseShared(2)`返回 true 唤醒C，C一看有5个够自己用了，然后 C 就可以跟 A 和 B 一起运行。而`ReentrantReadWriteLock`读锁的`tryReleaseShared()`只有在完全释放掉资源（state = 0）才返回true，所以自定义同步器可以根据需要决定`tryReleaseShared()`的返回值。
+
+### 2.4.1 doReleaseShared()
+
+此方法主要用于唤醒后继。下面是它的源码：
+
+```java
+private void doReleaseShared() {
+    for (;;) {
+        Node h = head;
+        if (h != null && h != tail) {
+            int ws = h.waitStatus;
+            if (ws == Node.SIGNAL) {
+                if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
+                    continue;
+                unparkSuccessor(h);//唤醒后继
+            }
+            else if (ws == 0 &&
+                     !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
+                continue;
+        }
+        if (h == head)// head发生变化
+            break;
+    }
+}
+```
+
+## 2.5 小结
+
+　　这里详解了独占和共享两种模式下获取-释放资源( acquire-release、acquireShared-releaseShared )的源码。值得注意的是，`acquire()`和`acquireShared()`两种方法下，线程在等待队列中都是忽略中断的。AQS也支持响应中断的，`acquireInterruptibly() | acquireSharedInterruptibly()`即是，相应的源码跟`acquire()`和`acquireShared()`差不多。
