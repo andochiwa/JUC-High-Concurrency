@@ -21,4 +21,4 @@
 
 11. [Custom ThreadPool](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/custom-thread-pool)
 
-12. [Custom ThreadPool](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/abstract-queued-synchronizer)
+12. [AbstractQueuedSynchronizer](https://github.com/andochiwa/JUC-High-Concurrency/tree/master/abstract-queued-synchronizer)
