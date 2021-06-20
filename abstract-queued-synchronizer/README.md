@@ -1,4 +1,4 @@
-# 1. AQS框架
+# 1. AQS抽象类
 
 <img src="img/img.png" style="zoom:150%;" />
 
@@ -30,7 +30,7 @@ AQS定义两种资源共享方式：Exclusive（独占，只有一个线程能�
 
 ## 2.1 结点状态 waitStatus
 
-这里我们说下Node。Node结点是对每一个等待获取资源的线程的封装，其包含了需要同步的线程本身及其等待状态，如是否被阻塞、是否等待唤醒、是否已经被取消等。变量waitStatus则表示当前Node结点的等待状态，共有5种取值 CANCELLED、SIGNAL、CONDITION、PROPAGATE、0。
+Node结点是对每一个等待获取资源的线程的封装，其包含了需要同步的线程本身及其等待状态，如是否被阻塞、是否等待唤醒、是否已经被取消等。变量waitStatus则表示当前Node结点的等待状态，共有5种取值 CANCELLED、SIGNAL、CONDITION、PROPAGATE、0。
 
 - **CANCELLED**(1)：表示当前结点已取消调度。当 timeout 或被中断（响应中断的情况下），会触发变更为此状态，进入该状态后的结点将不会再变化。
 - **SIGNAL**(-1)：表示后继结点在等待当前结点唤醒。后继结点入队时，会将前继结点的状态更新为 SIGNAL。
@@ -183,3 +183,51 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
     return false;
 }
 ```
+
+整个流程中，如果前驱结点的状态不是SIGNAL，那么自己就不能进入 waiting，需要去找个可以 waiting 的点，同时再尝试下看有没有机会轮到自己拿号。
+
+#### 2.1.3.2 parkAndCheckInterrupt()
+
+如果线程找好安全休息点后，那就可以安心去休息了。此方法就是让线程去休息，真正进入等待状态
+
+```java
+private final boolean parkAndCheckInterrupt() {
+    LockSupport.park(this);//调用park()使线程进入waiting状态
+    return Thread.interrupted();//如果被唤醒，查看自己是不是被中断的。
+}
+```
+
+`park()`会让当前线程进入waiting状态。在此状态下，有两种途径可以唤醒该线程：1.被`unpark()`；2.被`interrupt()`。需要注意的是，`Thread.interrupted()`会清除当前线程的中断标记位。 
+
+#### 2.1.3.3 小结
+
+看了`shouldParkAfterFailedAcquire()`和`parkAndCheckInterrupt()`，现在让我们再回到`acquireQueued()`，总结下该函数的具体流程：
+
+1. 结点进入队尾后，检查状态，找到安全休息点；
+2. 调用`park()`进入waiting状态，等待`unpark()`或`interrupt()`唤醒自己；
+3. 被唤醒后，看自己是不是有资格能拿到号。如果拿到，head指向当前结点，并返回从入队到拿到号的整个过程中是否被中断过；如果没拿到，继续流程1
+
+### 2.1.4 小结
+
+`acquireQueued()`分析完之后，接下来再回到`acquire()`, 再贴上它的源码：
+
+```java
+public final void acquire(int arg) {
+    if (!tryAcquire(arg) &&
+        acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+        selfInterrupt();
+}
+```
+
+再来总结下它的流程：
+
+1. 调用自定义同步器的`tryAcquire()`尝试直接去获取资源，如果成功则直接返回；
+2. 没成功，则`addWaiter()`将该线程加入等待队列的尾部，并标记为独占模式；
+3. `acquireQueued()`使线程在等待队列中休息，有机会时（轮到自己，会被`unpark()`）会去尝试获取资源。获取到资源后才返回。如果在整个等待过程中被中断过，则返回 true，否则返回 false。
+4. 如果线程在等待过程中被中断过，它是不响应的。只是获取资源后才再进行自我中断`selfInterrupt()`，将中断补上。
+
+由于此函数是重中之重，再用流程图总结一下：
+
+<img src="img/img_1.png" style="zoom:150%;" />
+
+至此，`acquire()`的流程算是告一段落了。这也就是`ReentrantLock.lock()`的流程
