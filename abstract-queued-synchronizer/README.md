@@ -231,3 +231,129 @@ public final void acquire(int arg) {
 <img src="img/img_1.png" style="zoom:150%;" />
 
 至此，`acquire()`的流程算是告一段落了。这也就是`ReentrantLock.lock()`的流程
+
+## 2.2 release(int)
+
+上一小节已经把`acquire()`说完了，这一小节就来讲讲它的反操作`release()`吧。此方法是独占模式下线程释放共享资源的顶层入口。它会释放指定量的资源，如果彻底释放了（即 state = 0）,它会唤醒等待队列里的其他线程来获取资源。这也正是`unlock()`的语义，当然不仅仅只限于`unlock()`。下面是`release()`的源码
+
+```java
+public final boolean release(int arg) {
+    if (tryRelease(arg)) {
+        Node h = head;//找到头结点
+        if (h != null && h.waitStatus != 0)
+            unparkSuccessor(h);//唤醒等待队列里的下一个线程
+        return true;
+    }
+    return false;
+}
+```
+
+逻辑并不复杂。它调用`tryRelease()`来释放资源。有一点需要注意的是，**它是根据tryRelease()的返回值来判断该线程是否已经完成释放掉资源了！所以自定义同步器在设计tryRelease()的时候要明确这一点！**
+
+### 2.2.1 tryRelease(int)
+
+　　此方法尝试去释放指定量的资源。下面是`tryRelease()`的源码：
+
+```java
+protected boolean tryRelease(int arg) {
+    throw new UnsupportedOperationException();
+}
+```
+
+跟`tryAcquire()`一样，这个方法是需要独占模式的自定义同步器去实现的。正常来说，`tryRelease()`都会成功的，因为这是独占模式，该线程来释放资源，那么它肯定已经拿到独占资源了，直接减掉相应量的资源即可( state -= arg )，也不需要考虑线程安全的问题。但要注意它的返回值，上面已经提到了，**`release()` 是根据 `tryRelease()` 的返回值来判断该线程是否已经完成释放掉资源了**，所以自义定同步器在实现时，如果已经彻底释放资源( state = 0)，要返回 true，否则返回 false。
+
+### 2.2.2 unparkSuccessor(Node)
+
+　　此方法用于唤醒等待队列中下一个线程。下面是源码：
+
+```java
+private void unparkSuccessor(Node node) {
+    // 这里，node一般为当前线程所在的结点。
+    int ws = node.waitStatus;
+    if (ws < 0) // 置零当前线程所在的结点状态，允许失败。
+        compareAndSetWaitStatus(node, ws, 0);
+
+    Node s = node.next; // 找到下一个需要唤醒的结点s
+    if (s == null || s.waitStatus > 0) {//如果为空或已取消
+        s = null;
+        for (Node t = tail; t != null && t != node; t = t.prev) // 从后向前找。
+            if (t.waitStatus <= 0) // 从这里可以看出，<=0的结点，都是还有效的结点。
+                s = t;
+    }
+    if (s != null)
+        LockSupport.unpark(s.thread); // 唤醒
+}
+```
+
+这个函数并不复杂。一句话概括：**用`unpark()`唤醒等待队列中最前边的那个未放弃线程**，这里我们也用 s 来表示吧。此时，再和`acquireQueued()`联系起来，s 被唤醒后，进入`if (p == head && tryAcquire(arg))`的判断（即使 p != head 也没关系，它会再进入`shouldParkAfterFailedAcquire()`寻找一个安全点。这里既然 s 已经是等待队列中最前边的那个未放弃线程了，那么通过`shouldParkAfterFailedAcquire()`的调整，s 也必然会跑到 head 的next 结点，下一次自旋 p == head 就成立了），然后 s 把自己设置成 head 标杆结点，表示自己已经获取到资源了，`acquire()`也返回了
+
+### 3.2.3 小结
+
+`release()`是独占模式下线程释放共享资源的顶层入口。它会释放指定量的资源，如果彻底释放了（即 state = 0）,它会唤醒等待队列里的其他线程来获取资源。
+
+如果获取锁的线程在 release 时异常了，没有 unpark 队列中的其他结点，这时队列中的其他结点会怎么办？是不是没法再被唤醒了？
+
+   答案是**YES**，这时，队列中等待锁的线程将永远处于 park 状态，无法再被唤醒！！！但是我们再回头想想，获取锁的线程在什么情形下会 release抛出异常呢？？
+
+1. 线程突然死掉了？可以通过 thread.stop 来停止线程的执行，但该函数的执行条件要严苛的多，而且函数注明是非线程安全的，已经标明Deprecated；
+2. 线程被 interupt 了？线程在运行态是不响应中断的，所以也不会抛出异常；
+3. release 代码有bug，抛出异常了？目前来看，Doug Lea的 release 方法还是比较健壮的，没有看出能引发异常的情形（如果有，恐怕早被用户吐槽了）。**除非自己写的tryRelease()有bug，那就没啥说的，自己写的bug只能自己含着泪去承受了**。
+
+## 2.3 acquireShared(int)
+
+此方法是共享模式下线程获取共享资源的顶层入口。它会获取指定量的资源，获取成功则直接返回，获取失败则进入等待队列，直到获取到资源为止，整个过程忽略中断。下面是`acquireShared()`的源码：
+
+```java
+public final void acquireShared(int arg) {
+    if (tryAcquireShared(arg) < 0)
+        doAcquireShared(arg);
+}
+```
+
+这里`tryAcquireShared()`依然需要自定义同步器去实现。但是 AQS 已经把其返回值的语义定义好了：负值 代表获取失败；0 代表获取成功，但没有剩余资源；正数 表示获取成功，还有剩余资源，其他线程还可以去获取。所以这里`acquireShared()`的流程就是：
+
+1. `tryAcquireShared()`尝试获取资源，成功则直接返回；
+2. 失败则通过`doAcquireShared()`进入等待队列，直到获取到资源为止才返回。
+
+### 2.3.1 doAcquireShared(int)
+
+此方法用于将当前线程加入等待队列尾部休息，直到其他线程释放资源唤醒自己，自己成功拿到相应量的资源后才返回。下面是`doAcquireShared()`的源码：
+
+```java
+private void doAcquireShared(int arg) {
+    final Node node = addWaiter(Node.SHARED); // 加入队列尾部
+    boolean failed = true; // 是否成功标志
+    try {
+        boolean interrupted = false; // 等待过程中是否被中断过的标志
+        for (;;) {
+            final Node p = node.predecessor(); // 前驱
+            // 如果到head的下一个，因为head是拿到资源的线程，此时node被唤醒，很可能是head用完资源来唤醒自己的
+            if (p == head) {
+                int r = tryAcquireShared(arg); // 尝试获取资源
+                if (r >= 0) {//成功
+                    setHeadAndPropagate(node, r); // 将head指向自己，还有剩余资源可以再唤醒之后的线程
+                    p.next = null; // help GC
+                    if (interrupted) // 如果等待过程中被打断过，此时将中断补上。
+                        selfInterrupt();
+                    failed = false;
+                    return;
+                }
+            }
+
+            // 判断状态，寻找安全点，进入waiting状态，等着被unpark()或interrupt()
+            if (shouldParkAfterFailedAcquire(p, node) &&
+                parkAndCheckInterrupt())
+                interrupted = true;
+        }
+    } finally {
+        if (failed)
+            cancelAcquire(node);
+    }
+}
+```
+
+其实流程与`acquireQueued()`并没有太大区别。只不过这里将补中断的`selfInterrupt()`放到`doAcquireShared()`里了，而独占模式是放到`acquireQueued()`之外，其实都一样
+
+跟独占模式比，还有一点需要注意的是，这里只有线程是 head.next 时（“老二”），才会去尝试获取资源，有剩余的话还会唤醒之后的队友。那么问题就来了，假如老大用完后释放了5个资源，而老二需要6个，老三需要1个，老四需要2个。老大先唤醒老二，老二一看资源不够，他是把资源让给老三呢，还是不让？答案是否定的！老二会继续`park()`等待其他线程释放资源，也更不会去唤醒老三和老四了。独占模式，同一时刻只有一个线程去执行，这样做未尝不可；但共享模式下，多个线程是可以同时执行的，现在因为老二的资源需求量大，而把后面量小的老三和老四也都卡住了。当然，这并不是问题，只是 AQS 保证严格按照入队顺序唤醒罢了（保证公平，但降低了并发）。
+
+#### 2.3.1.1 setHeadAndPropagate(Node, int)
