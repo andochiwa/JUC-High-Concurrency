@@ -10,11 +10,11 @@ import java.util.concurrent.locks.StampedLock;
 public class StampedLockTest {
     public static void main(String[] args){
         DataContainerStamper stamper = new DataContainerStamper(1);
-        for (int i = 0; i < 50; i++) {
+        for (int i = 0; i < 20; i++) {
             int j = i;
             new Thread(() -> {
                 try {
-                    if (j == 25) {
+                    if (j == 10) {
                         stamper.write(5);
                     }
                     stamper.read(5);
